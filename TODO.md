@@ -1,0 +1,3 @@
+- fa cumva sa poti la assisted pullups sa setezi ca multe kg no es bueno, sau poate chiar sa poti pune formula (123-77)
+- este ceva text random sub titlul exercitiilor dintr-un workout, scoate-l
+- aia cu suggest fix are accept si dismiss, dar nu se intampla nimic diferit intre ele. daca ai si un inbox si primesti acolo updates de la sistem, deocamdata
