@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, BookOpen, Check, ChevronRight, CirclePlus, Dumbbell, History, LayoutDashboard, LoaderCircle, LogOut, MoreHorizontal, Play, Plus, Save, Settings, Trash2, X } from 'lucide-react';
+import { BarChart3, BookOpen, Check, ChevronRight, CirclePlus, Download, Dumbbell, History, LayoutDashboard, LoaderCircle, LogOut, MoreHorizontal, Play, Plus, Save, Settings, Trash2, X } from 'lucide-react';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { hasSupabaseConfig, supabase } from '@/lib/supabase';
 
@@ -14,6 +14,7 @@ type SetRow = { id: string; session_exercise_id: string; set_number: number; set
 type Profile = { id: string; display_name: string | null; role: 'member' | 'admin'; default_set_count: number };
 type Suggestion = { id: string; suggestion: string; status: string; exercises?: { name: string } | null; profiles?: { display_name: string | null } | null };
 type Screen = 'home' | 'workout' | 'routines' | 'history' | 'progress' | 'catalog' | 'more';
+type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }> };
 
 const setTypes = ['standard', 'failure', 'drop_set', 'back_off', 'amrap'];
 const nav = [
@@ -40,6 +41,7 @@ export default function GymTracker() {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [sessions, setSessions] = useState<Workout[]>([]);
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const loadRequest = useRef(0);
 
   const load = async (id = userId) => {
@@ -76,8 +78,25 @@ export default function GymTracker() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const rememberInstallPrompt = (event: Event) => { event.preventDefault(); setInstallPrompt(event as BeforeInstallPromptEvent); };
+    window.addEventListener('beforeinstallprompt', rememberInstallPrompt);
+    return () => window.removeEventListener('beforeinstallprompt', rememberInstallPrompt);
+  }, []);
+
   const refresh = async () => { await load(); };
   const notify = (text: string) => { setMessage(text); window.setTimeout(() => setMessage(null), 3500); };
+  const installApp = async () => {
+    if (installPrompt) {
+      await installPrompt.prompt();
+      const choice = await installPrompt.userChoice;
+      if (choice.outcome === 'accepted') notify('Lift Log was added to your home screen.');
+      setInstallPrompt(null);
+      return;
+    }
+    const isAppleMobile = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    notify(isAppleMobile ? 'In Safari, tap Share, then Add to Home Screen.' : 'Use your browser menu and choose Install app or Add to home screen.');
+  };
 
   if (!hasSupabaseConfig) return <SetupNeeded />;
   if (loading) return <div className="loading"><LoaderCircle className="spin" /> Loading your log…</div>;
@@ -89,7 +108,7 @@ export default function GymTracker() {
     if (screen === 'history') return <HistoryScreen sessions={sessions.filter((item) => item.finished_at)} exercises={exercises} initialSetCount={profile?.default_set_count ?? 3} onChange={refresh} notify={notify} />;
     if (screen === 'progress') return <ProgressScreen sessions={sessions.filter((item) => item.finished_at)} exercises={exercises} />;
     if (screen === 'catalog') return <CatalogScreen exercises={exercises} isAdmin={profile?.role === 'admin'} onChange={refresh} notify={notify} />;
-    if (screen === 'more') return <MoreScreen profile={profile} onNavigate={setScreen} onChange={refresh} onSignOut={async () => { await supabase!.auth.signOut(); }} notify={notify} />;
+    if (screen === 'more') return <MoreScreen profile={profile} canInstall={Boolean(installPrompt)} onInstall={installApp} onNavigate={setScreen} onChange={refresh} onSignOut={async () => { await supabase!.auth.signOut(); }} notify={notify} />;
     return <HomeScreen profile={profile} activeWorkout={activeWorkout} sessions={sessions} onNavigate={setScreen} />;
   })();
 
@@ -194,7 +213,7 @@ function SuggestionForm({ exercise, onClose, notify }: { exercise: Exercise; onC
 function AdminRetire({ exercise, onChange, notify }: { exercise: Exercise; onChange: () => void; notify: (x: string) => void }) { const [editing, setEditing] = useState(false); async function retire() { if (!window.confirm(`Retire ${exercise.name}? It will remain in workout history.`)) return; const { error } = await supabase!.from('exercises').update({ is_retired: true }).eq('id', exercise.id); if (error) notify(error.message); else { onChange(); notify('Exercise retired'); } } return <><button className="text-button" onClick={() => setEditing(true)}>Edit</button><button className="text-button danger-text" onClick={retire}>Retire</button>{editing && <AdminExerciseForm exercise={exercise} onClose={() => setEditing(false)} onChange={onChange} notify={notify}/>}</>; }
 function AdminExerciseForm({ exercise, onClose, onChange, notify }: { exercise: Exercise; onClose: () => void; onChange: () => void; notify: (x: string) => void }) { const [name, setName] = useState(exercise.name); const [muscle, setMuscle] = useState(exercise.primary_muscle ?? ''); const [equipment, setEquipment] = useState(exercise.equipment ?? ''); async function save() { const { error } = await supabase!.from('exercises').update({ name: name.trim(), primary_muscle: muscle || null, equipment: equipment || null }).eq('id', exercise.id); if (error) notify(error.message); else { onChange(); onClose(); notify('Exercise updated'); } } return <Modal title="Edit exercise" onClose={onClose}><label>Name<input autoFocus value={name} onChange={(e) => setName(e.target.value)}/></label><label>Primary muscle<input value={muscle} onChange={(e) => setMuscle(e.target.value)}/></label><label>Equipment / machine<input value={equipment} onChange={(e) => setEquipment(e.target.value)}/></label><button className="button primary full" disabled={!name.trim()} onClick={save}>Save changes</button></Modal>; }
 
-function MoreScreen({ profile, onNavigate, onChange, onSignOut, notify }: { profile: Profile | null; onNavigate: (s: Screen) => void; onChange: () => void; onSignOut: () => void; notify: (x: string) => void }) { const [setCount, setSetCount] = useState(String(profile?.default_set_count ?? 3)); const [saving, setSaving] = useState(false); useEffect(() => setSetCount(String(profile?.default_set_count ?? 3)), [profile?.default_set_count]); async function saveDefaultSets() { const count = Math.max(1, Math.min(20, Number(setCount) || 3)); setSaving(true); const { error } = await supabase!.from('profiles').update({ default_set_count: count }).eq('id', profile?.id); setSaving(false); if (error) notify(error.message); else { setSetCount(String(count)); onChange(); notify(`Default set count saved: ${count}`); } } return <section className="page"><p className="eyebrow">ACCOUNT</p><h1>{profile?.display_name ?? 'Profile'}</h1><section className="settings-card"><div><b>Default sets per exercise</b><small>Pre-added whenever you add an exercise to a new workout.</small></div><div className="setting-control"><input aria-label="Default set count" type="number" min="1" max="20" inputMode="numeric" value={setCount} onChange={(e) => setSetCount(e.target.value)}/><button className="button compact primary" disabled={saving} onClick={saveDefaultSets}>{saving ? 'Saving' : 'Save'}</button></div></section><button className="settings-row" onClick={() => onNavigate('progress')}><BarChart3/><span>Progress</span><ChevronRight/></button><button className="settings-row" onClick={() => onNavigate('catalog')}><Settings/><span>Exercise catalog</span><ChevronRight/></button><button className="settings-row logout" onClick={onSignOut}><LogOut/><span>Sign out</span></button></section>; }
+function MoreScreen({ profile, canInstall, onInstall, onNavigate, onChange, onSignOut, notify }: { profile: Profile | null; canInstall: boolean; onInstall: () => void; onNavigate: (s: Screen) => void; onChange: () => void; onSignOut: () => void; notify: (x: string) => void }) { const [setCount, setSetCount] = useState(String(profile?.default_set_count ?? 3)); const [saving, setSaving] = useState(false); useEffect(() => setSetCount(String(profile?.default_set_count ?? 3)), [profile?.default_set_count]); async function saveDefaultSets() { const count = Math.max(1, Math.min(20, Number(setCount) || 3)); setSaving(true); const { error } = await supabase!.from('profiles').update({ default_set_count: count }).eq('id', profile?.id); setSaving(false); if (error) notify(error.message); else { setSetCount(String(count)); onChange(); notify(`Default set count saved: ${count}`); } } return <section className="page"><p className="eyebrow">ACCOUNT</p><h1>{profile?.display_name ?? 'Profile'}</h1><section className="settings-card"><div><b>Default sets per exercise</b><small>Pre-added whenever you add an exercise to a new workout.</small></div><div className="setting-control"><input aria-label="Default set count" type="number" min="1" max="20" inputMode="numeric" value={setCount} onChange={(e) => setSetCount(e.target.value)}/><button className="button compact primary" disabled={saving} onClick={saveDefaultSets}>{saving ? 'Saving' : 'Save'}</button></div></section><button className="settings-row" onClick={onInstall}><Download/><span>{canInstall ? 'Install Lift Log' : 'Add Lift Log to your phone'}</span><ChevronRight/></button><button className="settings-row" onClick={() => onNavigate('progress')}><BarChart3/><span>Progress</span><ChevronRight/></button><button className="settings-row" onClick={() => onNavigate('catalog')}><Settings/><span>Exercise catalog</span><ChevronRight/></button><button className="settings-row logout" onClick={onSignOut}><LogOut/><span>Sign out</span></button></section>; }
 
 function ExercisePicker({ exercises, onChoose, onClose }: { exercises: Exercise[]; onChoose: (x: Exercise) => void; onClose: () => void }) { const [query, setQuery] = useState(''); return <Modal title="Add exercise" onClose={onClose}><input autoFocus placeholder="Search catalog" value={query} onChange={(e) => setQuery(e.target.value)}/><div className="picker-list">{exercises.filter((x) => x.name.toLowerCase().includes(query.toLowerCase())).map((exercise) => <button key={exercise.id} onClick={() => onChoose(exercise)}><div><b>{exercise.name}</b><small>{[exercise.primary_muscle, exercise.equipment].filter(Boolean).join(' · ')}</small></div><Plus size={18}/></button>)}</div></Modal>; }
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) { return <div className="modal-backdrop"><section className="modal"><div className="modal-head"><h2>{title}</h2><button className="icon-button" onClick={onClose}><X/></button></div>{children}</section></div>; }
