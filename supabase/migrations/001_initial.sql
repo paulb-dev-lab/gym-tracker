@@ -8,6 +8,7 @@ create table public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null check (char_length(display_name) between 1 and 40),
   role public.app_role not null default 'member',
+  default_set_count smallint not null default 3 check (default_set_count between 1 and 20),
   created_at timestamptz not null default now()
 );
 create table public.exercises (
@@ -44,7 +45,7 @@ create table public.session_exercises (
 create table public.sets (
   id uuid primary key default gen_random_uuid(), session_exercise_id uuid not null references public.session_exercises(id) on delete cascade,
   set_number smallint not null check (set_number > 0), set_type public.set_kind not null default 'standard',
-  reps smallint not null check (reps > 0 and reps <= 1000), weight_kg numeric(7,2) not null check (weight_kg >= 0 and weight_kg <= 2000), note text,
+  reps smallint not null check (reps >= 0 and reps <= 1000), weight_kg numeric(7,2) not null check (weight_kg >= 0 and weight_kg <= 2000), note text,
   unique(session_exercise_id, set_number)
 );
 create table public.catalog_audit_log (

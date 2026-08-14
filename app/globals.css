@@ -10,3 +10,9 @@
 .suggestion small { max-width:260px; margin-top:3px; }
 .suggestion > div:last-child { display:flex; flex-direction:column; align-items:flex-end; }
 .chart { height:210px; padding:8px 4px 4px; border:1px solid var(--line); border-radius:13px; background:var(--paper); }
+.settings-card { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:16px 0; padding:14px; border:1px solid var(--line); border-radius:13px; background:var(--paper); }
+.settings-card b { display:block; font-size:13px; }
+.settings-card small { max-width:210px; margin-top:3px; }
+.setting-control { display:flex; align-items:center; gap:6px; }
+.setting-control input { width:53px; padding:8px 4px; text-align:center; }
+.delete-workout { display:flex; align-items:center; gap:5px; margin:24px auto 0; }

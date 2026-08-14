@@ -37,6 +37,10 @@ Open `http://localhost:3000`.
 
 The migration creates the tables, automatic profile creation, security policies, and access rules the app needs. It is safe to run once on a new Supabase project. Do not run it a second time on the same database: PostgreSQL will correctly report that objects such as tables already exist.
 
+If you had already run the initial migration before the default-set-count feature was added, also open and run [`supabase/migrations/002_default_set_count.sql`](supabase/migrations/002_default_set_count.sql) in a new SQL Editor query. New projects only need `001_initial.sql`.
+
+The follow-up migration is required before starting a routine with pre-added blank sets. Without it, Supabase rejects draft sets whose reps are still `0`.
+
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 
 ### Make your account the admin
