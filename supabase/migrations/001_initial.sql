@@ -57,6 +57,15 @@ create or replace function public.handle_new_user() returns trigger language plp
 begin insert into public.profiles (id, display_name) values (new.id, coalesce(nullif(trim(new.raw_user_meta_data->>'display_name'), ''), split_part(new.email, '@', 1))); return new; end; $$;
 create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
 create or replace function public.is_admin() returns boolean language sql stable security definer set search_path = public as $$ select coalesce((select role = 'admin' from public.profiles where id = auth.uid()), false); $$;
+create or replace function public.finish_workout(workout_id uuid) returns public.workout_sessions language plpgsql security invoker set search_path = public as $$
+declare result public.workout_sessions;
+begin
+  update public.workout_sessions set finished_at = now() where id = workout_id and owner_id = auth.uid() returning * into result;
+  if result.id is null then raise exception 'Workout not found or not owned by this account'; end if;
+  return result;
+end;
+$$;
+grant execute on function public.finish_workout(uuid) to authenticated;
 create or replace function public.touch_updated_at() returns trigger language plpgsql as $$ begin new.updated_at = now(); return new; end; $$;
 create trigger exercises_touch before update on public.exercises for each row execute procedure public.touch_updated_at();
 create trigger routines_touch before update on public.routines for each row execute procedure public.touch_updated_at();

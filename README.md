@@ -41,6 +41,8 @@ If you had already run the initial migration before the default-set-count featur
 
 The follow-up migration is required before starting a routine with pre-added blank sets. Without it, Supabase rejects draft sets whose reps are still `0`.
 
+For an existing project, also run [`supabase/migrations/003_finish_workout_server_time.sql`](supabase/migrations/003_finish_workout_server_time.sql). It makes workout completion use the database clock so a device clock difference cannot prevent a workout from finishing.
+
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 
 ### Make your account the admin

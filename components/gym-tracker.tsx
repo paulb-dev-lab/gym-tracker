@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3, BookOpen, Check, ChevronRight, CirclePlus, Dumbbell, History, LayoutDashboard, LoaderCircle, LogOut, MoreHorizontal, Play, Plus, Save, Settings, Trash2, X } from 'lucide-react';
 import { Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { hasSupabaseConfig, supabase } from '@/lib/supabase';
@@ -28,6 +28,7 @@ function errMessage(error: unknown) {
 }
 function dateLabel(value: string) { return new Intl.DateTimeFormat(undefined, { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date(value)); }
 function volume(sets: SetRow[] = []) { return sets.reduce((sum, set) => sum + Number(set.reps) * Number(set.weight_kg), 0); }
+function topWeight(sets: SetRow[] = []) { return Math.max(0, ...sets.map((set) => Number(set.weight_kg))); }
 
 export default function GymTracker() {
   const [userId, setUserId] = useState<string | null>(null);
@@ -39,16 +40,20 @@ export default function GymTracker() {
   const [routines, setRoutines] = useState<Routine[]>([]);
   const [sessions, setSessions] = useState<Workout[]>([]);
   const [activeWorkout, setActiveWorkout] = useState<Workout | null>(null);
+  const loadRequest = useRef(0);
 
   const load = async (id = userId) => {
     if (!supabase || !id) return;
-    setLoading(true);
+    const request = ++loadRequest.current;
+    // Initial auth starts with loading=true. Later saves refresh in the background
+    // so a blur on a single input never replaces the whole screen with a spinner.
     const [profileRes, exerciseRes, routineRes, sessionRes] = await Promise.all([
       supabase.from('profiles').select('id, display_name, role, default_set_count').eq('id', id).single(),
       supabase.from('exercises').select('id, name, primary_muscle, equipment, created_by').eq('is_retired', false).order('name'),
       supabase.from('routines').select('id, name, description, owner_id, copied_from_routine_id, profiles!routines_owner_id_fkey(display_name), routine_items(id, exercise_id, position, default_setup_label, exercises(id, name, primary_muscle, equipment, created_by))').order('updated_at', { ascending: false }),
       supabase.from('workout_sessions').select('id, title, started_at, finished_at, notes, session_exercises(id, session_id, exercise_id, position, setup_label, notes, exercises(id, name, primary_muscle, equipment, created_by), sets(id, session_exercise_id, set_number, set_type, reps, weight_kg, note))').eq('owner_id', id).order('started_at', { ascending: false }),
     ]);
+    if (request !== loadRequest.current) return;
     if (profileRes.data) setProfile(profileRes.data as Profile);
     if (exerciseRes.data) setExercises(exerciseRes.data as Exercise[]);
     if (routineRes.data) setRoutines(routineRes.data as unknown as Routine[]);
@@ -57,7 +62,7 @@ export default function GymTracker() {
       setSessions(rows);
       setActiveWorkout(rows.find((row) => !row.finished_at) ?? null);
     }
-    setLoading(false);
+    if (request === loadRequest.current) setLoading(false);
   };
 
   useEffect(() => {
@@ -71,7 +76,7 @@ export default function GymTracker() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const refresh = () => load();
+  const refresh = async () => { await load(); };
   const notify = (text: string) => { setMessage(text); window.setTimeout(() => setMessage(null), 3500); };
 
   if (!hasSupabaseConfig) return <SetupNeeded />;
@@ -112,19 +117,27 @@ function HomeScreen({ profile, activeWorkout, sessions, onNavigate }: { profile:
 
 function WorkoutScreen({ exercises, workout, ownerId, initialSetCount, onChange, onDone, onGoRoutines, notify }: { exercises: Exercise[]; workout: Workout | null; ownerId: string; initialSetCount: number; onChange: () => void; onDone: () => void; onGoRoutines: () => void; notify: (x: string) => void }) {
   const [working, setWorking] = useState(false); const [picker, setPicker] = useState(false); const [title, setTitle] = useState(workout?.title ?? '');
-  const desiredRoutine = typeof window !== 'undefined' ? window.sessionStorage.getItem('start-routine') : null;
   useEffect(() => { setTitle(workout?.title ?? ''); }, [workout?.id, workout?.title]);
-  useEffect(() => { if (desiredRoutine && !workout) { window.sessionStorage.removeItem('start-routine'); void startRoutine(desiredRoutine); } // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desiredRoutine, workout]);
+  useEffect(() => {
+    // Read within the effect, rather than from a render-time value. React runs
+    // effects twice in development, and this consumes the requested routine once.
+    const routineId = window.sessionStorage.getItem('start-routine');
+    if (!routineId || workout) return;
+    window.sessionStorage.removeItem('start-routine');
+    void startRoutine(routineId);
+  // startRoutine deliberately uses the current screen state; only rerun when an active workout changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workout]);
   async function createWorkout() { const { data, error } = await supabase!.from('workout_sessions').insert({ owner_id: ownerId, title: title || null }).select('id, title, started_at, finished_at, notes').single(); if (error) throw error; return data as Workout; }
   async function ensureWorkout() { if (workout) return workout; const created = await createWorkout(); onChange(); return created; }
   async function prefillSets(sessionExerciseIds: string[]) { if (!sessionExerciseIds.length) return; const rows = sessionExerciseIds.flatMap((id) => Array.from({ length: initialSetCount }, (_, index) => ({ session_exercise_id: id, set_number: index + 1, set_type: 'standard', reps: 0, weight_kg: 0 }))); const { error } = await supabase!.from('sets').insert(rows); if (error) throw error; }
   async function startRoutine(routineId: string) { setWorking(true); let fresh: Workout | null = null; const { data: routine, error: routineError } = await supabase!.from('routines').select('name, routine_items(exercise_id, position, default_setup_label)').eq('id', routineId).single(); try { if (routineError) throw routineError; fresh = await createWorkout(); const items = (routine?.routine_items ?? []).map((item: { exercise_id: string; position: number; default_setup_label: string | null }) => ({ session_id: fresh!.id, exercise_id: item.exercise_id, position: item.position, setup_label: item.default_setup_label })); if (items.length) { const { data: added, error } = await supabase!.from('session_exercises').insert(items).select('id'); if (error) throw error; await prefillSets((added ?? []).map((item) => item.id)); } onChange(); notify(`Started ${routine?.name ?? 'routine'} with ${initialSetCount} sets per exercise`); } catch (error) { if (fresh) await supabase!.from('workout_sessions').delete().eq('id', fresh.id); notify(errMessage(error)); } finally { setWorking(false); } }
   async function addExercise(exercise: Exercise) { setWorking(true); try { const active = await ensureWorkout(); const position = (active.session_exercises?.length ?? 0) + 1; const { data: added, error } = await supabase!.from('session_exercises').insert({ session_id: active.id, exercise_id: exercise.id, position }).select('id').single(); if (error || !added) throw error ?? new Error('Could not add exercise'); await prefillSets([added.id]); setPicker(false); onChange(); } catch (error) { notify(errMessage(error)); } finally { setWorking(false); } }
   async function updateTitle() { if (!workout) return; const { error } = await supabase!.from('workout_sessions').update({ title: title || null }).eq('id', workout.id); if (error) notify(errMessage(error)); else notify('Workout title saved'); }
-  async function finish() { if (!workout) return; setWorking(true); const { error } = await supabase!.from('workout_sessions').update({ finished_at: new Date().toISOString(), title: title || null }).eq('id', workout.id); setWorking(false); if (error) notify(errMessage(error)); else { onChange(); notify('Workout finished'); onDone(); } }
+  async function finish() { if (!workout) return; setWorking(true); const { error: titleError } = await supabase!.from('workout_sessions').update({ title: title || null }).eq('id', workout.id); const { error } = titleError ? { error: titleError } : await supabase!.rpc('finish_workout', { workout_id: workout.id }); if (error) { setWorking(false); notify(errMessage(error)); return; } await onChange(); setWorking(false); notify('Workout finished'); onDone(); }
+  async function cancelWorkout() { if (!workout || !window.confirm('Cancel this unfinished workout? Its exercises and sets will be deleted.')) return; setWorking(true); const { error } = await supabase!.from('workout_sessions').delete().eq('id', workout.id); if (error) { setWorking(false); notify(errMessage(error)); return; } await onChange(); setWorking(false); notify('Unfinished workout cancelled'); }
   if (!workout) return <section className="page workout"><p className="eyebrow">READY WHEN YOU ARE</p><h1>Start training</h1><p className="muted">Create a blank workout or choose one of the shared routines.</p><label>Workout name <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Push day"/></label><button className="button primary full" disabled={working} onClick={async () => { setWorking(true); try { await ensureWorkout(); } catch (error) { notify(errMessage(error)); } finally { setWorking(false); } }}>{working && <LoaderCircle className="spin" size={17}/>} Start blank workout</button><button className="button secondary full" onClick={onGoRoutines}>Or start from a routine</button></section>;
-  return <section className="page workout"><div className="workout-title"><input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={updateTitle} placeholder="Workout title"/><small>Started {dateLabel(workout.started_at)}</small></div><div className="section-heading"><h2>Exercises</h2><button className="button compact" onClick={() => setPicker(true)}><Plus size={17}/> Add</button></div>{(workout.session_exercises ?? []).map((item) => <ExerciseLog key={item.id} item={item} onChange={onChange} notify={notify}/>) }{!(workout.session_exercises?.length) && <div className="empty"><Dumbbell/><b>Add your first exercise</b><span>Choose from the global catalog.</span></div>}<button className="button primary full finish" disabled={working} onClick={finish}><Check size={17}/> Finish workout</button>{picker && <ExercisePicker exercises={exercises} onChoose={addExercise} onClose={() => setPicker(false)}/>}</section>;
+  return <section className="page workout"><div className="workout-title"><input value={title} onChange={(e) => setTitle(e.target.value)} onBlur={updateTitle} placeholder="Workout title"/><small>Started {dateLabel(workout.started_at)}</small></div><div className="section-heading"><h2>Exercises</h2><button className="button compact" onClick={() => setPicker(true)}><Plus size={17}/> Add</button></div>{(workout.session_exercises ?? []).map((item) => <ExerciseLog key={item.id} item={item} onChange={onChange} notify={notify}/>) }{!(workout.session_exercises?.length) && <div className="empty"><Dumbbell/><b>Add your first exercise</b><span>Choose from the global catalog.</span></div>}<button className="button primary full finish" disabled={working} onClick={finish}><Check size={17}/> Finish workout</button><button className="text-button danger-text cancel-workout" disabled={working} onClick={cancelWorkout}>Cancel unfinished workout</button>{picker && <ExercisePicker exercises={exercises} onChoose={addExercise} onClose={() => setPicker(false)}/>}</section>;
 }
 
 function ExerciseLog({ item, onChange, notify }: { item: SessionExercise; onChange: () => void; notify: (x: string) => void }) {
@@ -152,13 +165,13 @@ function RoutineCard({ routine, own, onStart, onCopy }: { routine: Routine; own?
 
 function RoutineForm({ exercises, ownerId, onClose, onChange, notify }: { exercises: Exercise[]; ownerId: string; onClose: () => void; onChange: () => void; notify: (x: string) => void }) { const [name, setName] = useState(''); const [description, setDescription] = useState(''); const [items, setItems] = useState<{ exercise_id: string; setup: string }[]>([]); const [selected, setSelected] = useState(''); const [busy, setBusy] = useState(false); async function save() { if (!name.trim()) return; setBusy(true); const { data, error } = await supabase!.from('routines').insert({ owner_id: ownerId, name: name.trim(), description: description || null }).select('id').single(); if (error || !data) { setBusy(false); return notify(error?.message ?? 'Could not create routine'); } if (items.length) { const { error: itemError } = await supabase!.from('routine_items').insert(items.map((item, i) => ({ routine_id: data.id, exercise_id: item.exercise_id, position: i + 1, default_setup_label: item.setup || null }))); if (itemError) notify(itemError.message); } setBusy(false); onChange(); onClose(); notify('Shared routine created'); } return <Modal title="New shared routine" onClose={onClose}><label>Name<input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Upper body"/></label><label>Description<textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional guidance"/></label><div className="inline-add"><select value={selected} onChange={(e) => setSelected(e.target.value)}><option value="">Add exercise…</option>{exercises.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select><button className="button compact" onClick={() => { if (selected) { setItems([...items, { exercise_id: selected, setup: '' }]); setSelected(''); } }}>Add</button></div>{items.map((item, i) => <div className="routine-item-edit" key={`${item.exercise_id}-${i}`}><b>{exercises.find((x) => x.id === item.exercise_id)?.name}</b><input value={item.setup} onChange={(e) => setItems(items.map((x, index) => index === i ? { ...x, setup: e.target.value } : x))} placeholder="Default setup (optional)"/><button className="icon-button" onClick={() => setItems(items.filter((_, index) => index !== i))}><X size={16}/></button></div>)}<button className="button primary full" disabled={busy} onClick={save}><Save size={16}/> Publish routine</button></Modal>; }
 
-function HistoryScreen({ sessions, exercises, initialSetCount, onChange, notify }: { sessions: Workout[]; exercises: Exercise[]; initialSetCount: number; onChange: () => void; notify: (x: string) => void }) { const [selected, setSelected] = useState<Workout | null>(null); return <section className="page"><p className="eyebrow">YOUR RECORD</p><h1>History</h1>{sessions.length ? sessions.map((session) => <article className="history-card" key={session.id}><div><div><h3>{session.title || 'Workout'}</h3><p>{dateLabel(session.started_at)} · {session.session_exercises?.length ?? 0} exercises</p></div><button className="text-button" onClick={() => setSelected(session)}>Edit</button></div><div className="history-exercises">{(session.session_exercises ?? []).map((item) => <span key={item.id}>{item.exercises?.name} · {Math.round(volume(item.sets))} kg</span>)}</div>{session.notes && <p className="note">{session.notes}</p>}</article>) : <div className="empty"><History/><b>Nothing recorded yet.</b><span>Finished workouts will live here.</span></div>}{selected && <FinishedWorkoutEditor workout={selected} exercises={exercises} initialSetCount={initialSetCount} onClose={() => setSelected(null)} onChange={onChange} notify={notify}/>}</section>; }
+function HistoryScreen({ sessions, exercises, initialSetCount, onChange, notify }: { sessions: Workout[]; exercises: Exercise[]; initialSetCount: number; onChange: () => Promise<void>; notify: (x: string) => void }) { const [selected, setSelected] = useState<Workout | null>(null); return <section className="page"><p className="eyebrow">YOUR RECORD</p><h1>History</h1>{sessions.length ? sessions.map((session) => <article className="history-card" key={session.id}><div><div><h3>{session.title || 'Workout'}</h3><p>{dateLabel(session.started_at)} · {session.session_exercises?.length ?? 0} exercises</p></div><button className="text-button" onClick={() => setSelected(session)}>Edit</button></div><div className="history-exercises">{(session.session_exercises ?? []).map((item) => <span key={item.id}><b>{item.exercises?.name}</b><small>best {topWeight(item.sets)} kg</small></span>)}</div>{session.notes && <p className="note">{session.notes}</p>}</article>) : <div className="empty"><History/><b>Nothing recorded yet.</b><span>Finished workouts will live here.</span></div>}{selected && <FinishedWorkoutEditor workout={selected} exercises={exercises} initialSetCount={initialSetCount} onClose={() => setSelected(null)} onChange={onChange} notify={notify}/>}</section>; }
 
-function FinishedWorkoutEditor({ workout, exercises, initialSetCount, onClose, onChange, notify }: { workout: Workout; exercises: Exercise[]; initialSetCount: number; onClose: () => void; onChange: () => void; notify: (x: string) => void }) {
+function FinishedWorkoutEditor({ workout, exercises, initialSetCount, onClose, onChange, notify }: { workout: Workout; exercises: Exercise[]; initialSetCount: number; onClose: () => void; onChange: () => Promise<void>; notify: (x: string) => void }) {
   const [title, setTitle] = useState(workout.title ?? ''); const [notes, setNotes] = useState(workout.notes ?? ''); const [picker, setPicker] = useState(false); const [busy, setBusy] = useState(false);
   async function saveDetails() { setBusy(true); const { error } = await supabase!.from('workout_sessions').update({ title: title || null, notes: notes || null }).eq('id', workout.id); setBusy(false); if (error) notify(error.message); else { onChange(); notify('Workout details saved'); } }
   async function addExercise(exercise: Exercise) { const { data: existing } = await supabase!.from('session_exercises').select('position').eq('session_id', workout.id).order('position', { ascending: false }).limit(1); const position = (existing?.[0]?.position ?? 0) + 1; setBusy(true); const { data, error } = await supabase!.from('session_exercises').insert({ session_id: workout.id, exercise_id: exercise.id, position }).select('id').single(); if (!error && data) { const sets = Array.from({ length: initialSetCount }, (_, index) => ({ session_exercise_id: data.id, set_number: index + 1, set_type: 'standard', reps: 0, weight_kg: 0 })); const { error: setError } = await supabase!.from('sets').insert(sets); if (setError) notify(setError.message); } setBusy(false); if (error) notify(error.message); else { setPicker(false); onChange(); notify('Exercise added'); } }
-  async function deleteWorkout() { if (!window.confirm(`Delete ${workout.title || 'this workout'} permanently? This cannot be undone.`)) return; setBusy(true); const { error } = await supabase!.from('workout_sessions').delete().eq('id', workout.id); setBusy(false); if (error) notify(error.message); else { onChange(); onClose(); notify('Workout deleted'); } }
+  async function deleteWorkout() { if (!window.confirm(`Delete ${workout.title || 'this workout'} permanently? This cannot be undone.`)) return; setBusy(true); const { error } = await supabase!.from('workout_sessions').delete().eq('id', workout.id); if (error) { setBusy(false); notify(error.message); return; } await onChange(); setBusy(false); onClose(); notify('Workout deleted'); }
   return <Modal title="Edit finished workout" onClose={onClose}><p className="muted">{dateLabel(workout.started_at)}</p><label>Workout title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Workout title"/></label><label>Workout note<textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Optional note for the whole workout"/></label><button className="button secondary full" disabled={busy} onClick={saveDetails}><Save size={16}/> Save workout details</button><div className="section-heading"><h2>Exercises</h2><button className="button compact" onClick={() => setPicker(true)}><Plus size={16}/> Add</button></div>{(workout.session_exercises ?? []).map((item) => <ExerciseLog key={item.id} item={item} onChange={onChange} notify={notify}/>)}<button className="text-button danger-text delete-workout" disabled={busy} onClick={deleteWorkout}><Trash2 size={15}/> Delete workout permanently</button>{picker && <ExercisePicker exercises={exercises} onChoose={addExercise} onClose={() => setPicker(false)}/>}</Modal>;
 }
 
