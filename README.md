@@ -43,6 +43,10 @@ The follow-up migration is required before starting a routine with pre-added bla
 
 For an existing project, also run [`supabase/migrations/003_finish_workout_server_time.sql`](supabase/migrations/003_finish_workout_server_time.sql). It makes workout completion use the database clock so a device clock difference cannot prevent a workout from finishing.
 
+For exercises where the displayed weight is assistance rather than resistance, run [`supabase/migrations/004_exercise_weight_direction.sql`](supabase/migrations/004_exercise_weight_direction.sql). Afterward, edit each relevant exercise in the admin catalog and set **Weight meaning** to **Assistance — lower is better**.
+
+For routine archiving, run [`supabase/migrations/005_archive_routines.sql`](supabase/migrations/005_archive_routines.sql). Archived routines are private to their creator and remain available in a read-only archived-routines view.
+
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 
 ### Make your account the admin

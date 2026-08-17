@@ -13,7 +13,7 @@ create table public.profiles (
 );
 create table public.exercises (
   id uuid primary key default gen_random_uuid(), name text not null unique check (char_length(name) between 2 and 100),
-  primary_muscle text, equipment text, created_by uuid not null default auth.uid() references public.profiles(id),
+  primary_muscle text, equipment text, weight_direction text not null default 'higher_is_better' check (weight_direction in ('higher_is_better', 'lower_is_better')), created_by uuid not null default auth.uid() references public.profiles(id),
   is_retired boolean not null default false, created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
 create table public.exercise_suggestions (
@@ -23,7 +23,7 @@ create table public.exercise_suggestions (
 );
 create table public.routines (
   id uuid primary key default gen_random_uuid(), owner_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
-  name text not null check (char_length(name) between 1 and 100), description text,
+  name text not null check (char_length(name) between 1 and 100), description text, archived_at timestamptz,
   copied_from_routine_id uuid references public.routines(id) on delete set null,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
@@ -91,11 +91,11 @@ create policy "admin deletes exercises" on public.exercises for delete to authen
 create policy "suggestions insert own" on public.exercise_suggestions for insert to authenticated with check (author_id = auth.uid());
 create policy "suggestions view own or admin" on public.exercise_suggestions for select to authenticated using (author_id = auth.uid() or public.is_admin());
 create policy "admin updates suggestions" on public.exercise_suggestions for update to authenticated using (public.is_admin()) with check (public.is_admin());
-create policy "routines shared read" on public.routines for select to authenticated using (true);
+create policy "routines active shared read" on public.routines for select to authenticated using (archived_at is null or owner_id = auth.uid());
 create policy "routines owner insert" on public.routines for insert to authenticated with check (owner_id = auth.uid());
 create policy "routines owner update" on public.routines for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy "routines owner delete" on public.routines for delete to authenticated using (owner_id = auth.uid());
-create policy "routine items shared read" on public.routine_items for select to authenticated using (true);
+create policy "routine items readable with routine" on public.routine_items for select to authenticated using (exists (select 1 from public.routines r where r.id = routine_id and (r.archived_at is null or r.owner_id = auth.uid())));
 create policy "routine items owner write" on public.routine_items for all to authenticated using (exists (select 1 from public.routines r where r.id = routine_id and r.owner_id = auth.uid())) with check (exists (select 1 from public.routines r where r.id = routine_id and r.owner_id = auth.uid()));
 create policy "sessions owner only" on public.workout_sessions for all to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy "session exercises owner only" on public.session_exercises for all to authenticated using (exists (select 1 from public.workout_sessions s where s.id = session_id and s.owner_id = auth.uid())) with check (exists (select 1 from public.workout_sessions s where s.id = session_id and s.owner_id = auth.uid()));
