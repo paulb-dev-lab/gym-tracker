@@ -7,6 +7,7 @@ A small, mobile-first gym tracker for a private group. Anyone can make an accoun
 - Email/password accounts and display names
 - Global exercise catalog: every member can add; only the admin can retire entries
 - Correction-suggestion queue for the admin
+- Shared muscle catalogue with primary/secondary exercise targets and member suggestions
 - Private live workout logging: exercise setup, set type, weight, reps, and notes
 - Shared routines, with one-click copy-to-my-routines and start-workout flows
 - Private workout history and simple top-weight/volume progression view
@@ -46,6 +47,8 @@ For an existing project, also run [`supabase/migrations/003_finish_workout_serve
 For exercises where the displayed weight is assistance rather than resistance, run [`supabase/migrations/004_exercise_weight_direction.sql`](supabase/migrations/004_exercise_weight_direction.sql). Afterward, edit each relevant exercise in the admin catalog and set **Weight meaning** to **Assistance — lower is better**.
 
 For routine archiving, run [`supabase/migrations/005_archive_routines.sql`](supabase/migrations/005_archive_routines.sql). Archived routines are private to their creator and remain available in a read-only archived-routines view.
+
+For the muscle catalogue and exercise target mapping, run [`supabase/migrations/006_muscle_catalog.sql`](supabase/migrations/006_muscle_catalog.sql), followed by [`supabase/migrations/007_exercise_creator_targets.sql`](supabase/migrations/007_exercise_creator_targets.sql) and [`supabase/migrations/008_group_exercise_targets.sql`](supabase/migrations/008_group_exercise_targets.sql). The catalogue structure is admin-only, while the person who adds an exercise can select either a muscle group or a nested individual muscle as its target, then revise those targets later. Admins can also revise targets for every exercise.
 
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 
