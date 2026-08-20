@@ -50,6 +50,8 @@ For routine archiving, run [`supabase/migrations/005_archive_routines.sql`](supa
 
 For the muscle catalogue and exercise target mapping, run [`supabase/migrations/006_muscle_catalog.sql`](supabase/migrations/006_muscle_catalog.sql), followed by [`supabase/migrations/007_exercise_creator_targets.sql`](supabase/migrations/007_exercise_creator_targets.sql) and [`supabase/migrations/008_group_exercise_targets.sql`](supabase/migrations/008_group_exercise_targets.sql). The catalogue structure is admin-only, while the person who adds an exercise can select either a muscle group or a nested individual muscle as its target, then revise those targets later. Admins can also revise targets for every exercise.
 
+For multi-stage dropsets, run [`supabase/migrations/009_drop_set_stages.sql`](supabase/migrations/009_drop_set_stages.sql). A dropset's usual kg and reps are its initial stage; additional drops can then be recorded with their own kg and reps.
+
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 
 ### Make your account the admin
