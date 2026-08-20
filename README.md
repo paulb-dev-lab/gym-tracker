@@ -52,6 +52,8 @@ For the muscle catalogue and exercise target mapping, run [`supabase/migrations/
 
 For multi-stage dropsets, run [`supabase/migrations/009_drop_set_stages.sql`](supabase/migrations/009_drop_set_stages.sql). A dropset's usual kg and reps are its initial stage; additional drops can then be recorded with their own kg and reps.
 
+For the per-user kilograms/pounds setting, run [`supabase/migrations/010_profile_weight_unit.sql`](supabase/migrations/010_profile_weight_unit.sql). Weights remain stored in kilograms, while the app converts all entries and displays to each user’s selected unit.
+
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 
 ### Make your account the admin
