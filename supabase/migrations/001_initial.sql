@@ -9,6 +9,7 @@ create table public.profiles (
   display_name text not null check (char_length(display_name) between 1 and 40),
   role public.app_role not null default 'member',
   default_set_count smallint not null default 3 check (default_set_count between 1 and 20),
+  week_starts_on text not null default 'monday' check (week_starts_on in ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday', 'rolling_7_days')),
   created_at timestamptz not null default now()
 );
 create table public.exercises (

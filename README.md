@@ -56,6 +56,8 @@ For the per-user kilograms/pounds setting, run [`supabase/migrations/010_profile
 
 For workout exercise reordering, run [`supabase/migrations/011_reorder_session_exercises.sql`](supabase/migrations/011_reorder_session_exercises.sql). It installs the atomic reorder function that preserves every exercise's sets and notes.
 
+For the per-user beginning-of-week setting, run [`supabase/migrations/012_profile_week_start.sql`](supabase/migrations/012_profile_week_start.sql). Existing accounts default to Monday and can choose any weekday or a rolling seven-day window in Settings.
+
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 
 ### Make your account the admin
