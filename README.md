@@ -54,6 +54,8 @@ For multi-stage dropsets, run [`supabase/migrations/009_drop_set_stages.sql`](su
 
 For the per-user kilograms/pounds setting, run [`supabase/migrations/010_profile_weight_unit.sql`](supabase/migrations/010_profile_weight_unit.sql). Weights remain stored in kilograms, while the app converts all entries and displays to each user’s selected unit.
 
+For workout exercise reordering, run [`supabase/migrations/011_reorder_session_exercises.sql`](supabase/migrations/011_reorder_session_exercises.sql). It installs the atomic reorder function that preserves every exercise's sets and notes.
+
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 
 ### Make your account the admin
