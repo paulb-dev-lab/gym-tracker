@@ -1,6 +1,6 @@
 # Lift Log
 
-A small, mobile-first gym tracker for a private group. Anyone can make an account; routines are shared and copyable, while workout data remains private to the user who logged it.
+A small, mobile-first gym tracker for a private group. Anyone can make an account; routines can be shared and copied, while workout data remains private to the user who logged it.
 
 ## What is included
 
@@ -9,7 +9,7 @@ A small, mobile-first gym tracker for a private group. Anyone can make an accoun
 - Correction-suggestion queue for the admin
 - Shared muscle catalogue with primary/secondary exercise targets and member suggestions
 - Private live workout logging: exercise setup, set type, weight, reps, and notes
-- Shared routines, with one-click copy-to-my-routines and start-workout flows
+- Private-by-default routines with optional public sharing, one-click copying, and start-workout flows
 - Private workout history and simple top-weight/volume progression view
 - Installable web-app manifest and phone-first layout
 
@@ -57,6 +57,8 @@ For the per-user kilograms/pounds setting, run [`supabase/migrations/010_profile
 For workout exercise reordering, run [`supabase/migrations/011_reorder_session_exercises.sql`](supabase/migrations/011_reorder_session_exercises.sql). It installs the atomic reorder function that preserves every exercise's sets and notes.
 
 For the per-user beginning-of-week setting, run [`supabase/migrations/012_profile_week_start.sql`](supabase/migrations/012_profile_week_start.sql). Existing accounts default to Monday and can choose any weekday or a rolling seven-day window in Settings.
+
+For private-by-default routine sharing, run [`supabase/migrations/013_routine_visibility.sql`](supabase/migrations/013_routine_visibility.sql). Existing routines become private; owners can make active routines public while creating or editing them, and archiving always makes a routine private.
 
 To verify the migration, open **Table Editor** in the left navigation. You should see tables including `profiles`, `exercises`, `routines`, `workout_sessions`, `session_exercises`, and `sets`.
 

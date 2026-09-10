@@ -24,7 +24,7 @@ create table public.exercise_suggestions (
 );
 create table public.routines (
   id uuid primary key default gen_random_uuid(), owner_id uuid not null default auth.uid() references public.profiles(id) on delete cascade,
-  name text not null check (char_length(name) between 1 and 100), description text, archived_at timestamptz,
+  name text not null check (char_length(name) between 1 and 100), description text, archived_at timestamptz, is_public boolean not null default false,
   copied_from_routine_id uuid references public.routines(id) on delete set null,
   created_at timestamptz not null default now(), updated_at timestamptz not null default now()
 );
@@ -70,6 +70,9 @@ grant execute on function public.finish_workout(uuid) to authenticated;
 create or replace function public.touch_updated_at() returns trigger language plpgsql as $$ begin new.updated_at = now(); return new; end; $$;
 create trigger exercises_touch before update on public.exercises for each row execute procedure public.touch_updated_at();
 create trigger routines_touch before update on public.routines for each row execute procedure public.touch_updated_at();
+create or replace function public.make_archived_routine_private() returns trigger language plpgsql set search_path = public as $$
+begin if new.archived_at is not null then new.is_public = false; end if; return new; end; $$;
+create trigger routines_archive_private before insert or update of archived_at, is_public on public.routines for each row execute procedure public.make_archived_routine_private();
 create or replace function public.audit_exercise_change() returns trigger language plpgsql security definer set search_path = public as $$
 begin
   if tg_op = 'DELETE' then
@@ -92,11 +95,11 @@ create policy "admin deletes exercises" on public.exercises for delete to authen
 create policy "suggestions insert own" on public.exercise_suggestions for insert to authenticated with check (author_id = auth.uid());
 create policy "suggestions view own or admin" on public.exercise_suggestions for select to authenticated using (author_id = auth.uid() or public.is_admin());
 create policy "admin updates suggestions" on public.exercise_suggestions for update to authenticated using (public.is_admin()) with check (public.is_admin());
-create policy "routines active shared read" on public.routines for select to authenticated using (archived_at is null or owner_id = auth.uid());
+create policy "routines public or owner read" on public.routines for select to authenticated using (owner_id = auth.uid() or (is_public and archived_at is null));
 create policy "routines owner insert" on public.routines for insert to authenticated with check (owner_id = auth.uid());
 create policy "routines owner update" on public.routines for update to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy "routines owner delete" on public.routines for delete to authenticated using (owner_id = auth.uid());
-create policy "routine items readable with routine" on public.routine_items for select to authenticated using (exists (select 1 from public.routines r where r.id = routine_id and (r.archived_at is null or r.owner_id = auth.uid())));
+create policy "routine items readable with routine" on public.routine_items for select to authenticated using (exists (select 1 from public.routines r where r.id = routine_id and (r.owner_id = auth.uid() or (r.is_public and r.archived_at is null))));
 create policy "routine items owner write" on public.routine_items for all to authenticated using (exists (select 1 from public.routines r where r.id = routine_id and r.owner_id = auth.uid())) with check (exists (select 1 from public.routines r where r.id = routine_id and r.owner_id = auth.uid()));
 create policy "sessions owner only" on public.workout_sessions for all to authenticated using (owner_id = auth.uid()) with check (owner_id = auth.uid());
 create policy "session exercises owner only" on public.session_exercises for all to authenticated using (exists (select 1 from public.workout_sessions s where s.id = session_id and s.owner_id = auth.uid())) with check (exists (select 1 from public.workout_sessions s where s.id = session_id and s.owner_id = auth.uid()));
